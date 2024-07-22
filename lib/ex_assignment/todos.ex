@@ -24,19 +24,14 @@ defmodule ExAssignment.Todos do
 
   """
   def list_todos(type \\ nil) do
-    cond do
-      type == :open ->
-        from(t in Todo, where: not t.done, order_by: t.priority)
-        |> Repo.all()
-
-      type == :done ->
-        from(t in Todo, where: t.done, order_by: t.priority)
-        |> Repo.all()
-
-      true ->
-        from(t in Todo, order_by: t.priority)
-        |> Repo.all()
+    query = case type do
+      :open -> from(t in Todo, where: not t.done)
+      :done -> from(t in Todo, where: t.done)
+      _ ->  Todo
     end
+
+    from(t in query, order_by: t.priority)
+    |> Repo.all()
   end
 
   @doc """
@@ -188,7 +183,6 @@ defmodule ExAssignment.Todos do
     :ok
   end
 
-
   defp calculate_probabilities(todos) do
     total_weight = Enum.reduce(todos, 0, fn todo, acc -> acc + 1.0 / todo.priority end)
 
@@ -198,7 +192,26 @@ defmodule ExAssignment.Todos do
     end)
   end
 
-  defp recommend_todo(todos) do
+  @doc """
+  Recommends a to-do item based on calculated probabilities.
+
+  ## Parameters
+
+    - todos: A list of to-do items, each containing a `priority` field.
+
+  ## Returns
+
+    - A to-do item selected based on weighted random selection according to their probabilities.
+
+  The function first calculates the probabilities, then generates a random value to select a to-do item whose cumulative probability matches the random value.
+
+  ## Example
+
+      iex> todos = [%{priority: 1}, %{priority: 2}, %{priority: 3}]
+      iex> recommend_todo(todos)
+      %{priority: 1} # The output can vary due to randomness
+  """
+  def recommend_todo(todos) do
     probabilities = calculate_probabilities(todos)
     cumulative_probabilities = Enum.scan(probabilities, 0, fn {_, prob}, acc -> acc + prob end)
 
@@ -211,7 +224,22 @@ defmodule ExAssignment.Todos do
     selected_todo
   end
 
+  @doc """
+  Resets the `is_persist` flag of the currently persisted to-do item.
 
+  This function finds the to-do item that is currently marked as persistent (`is_persist: true`) and updates its `is_persist` flag to `false`.
+
+  ## Returns
+
+    - `{:ok, _}` if the update was successful.
+    - `nil` if no persisted to-do item was found.
+
+  ## Example
+
+      iex> reset_recommended_todo()
+      {:ok, _} # If a persisted to-do was found and updated
+      nil      # If no persisted to-do was found
+  """
   def reset_recommended_todo() do
     todo = get_todo_by(is_persist: true)
     if todo do
