@@ -211,4 +211,12 @@ defmodule ExAssignment.Todos do
     selected_todo
   end
 
+
+  def reset_recommended_todo() do
+    todo = get_todo_by(is_persist: true)
+    if todo do
+      {:ok, _} = update_todo(todo, %{is_persist: false})
+    end
+  end
+
 end
