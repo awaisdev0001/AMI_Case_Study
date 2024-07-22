@@ -48,7 +48,7 @@ defmodule ExAssignment.Todos do
     list_todos(:open)
     |> case do
       [] -> nil
-      todos -> Enum.take_random(todos, 1) |> List.first()
+      todos -> recommend_todo(todos)
     end
   end
 
@@ -166,4 +166,31 @@ defmodule ExAssignment.Todos do
 
     :ok
   end
+
+  def recommend_todo(todos) do
+    selected_todo = select_todo(todos)
+  end
+
+  defp calculate_probabilities(todos) do
+    total_weight = Enum.reduce(todos, 0, fn todo, acc -> acc + 1.0 / todo.priority end)
+
+    Enum.map(todos, fn todo ->
+      probability = (1.0 / todo.priority) / total_weight
+      {todo, probability}
+    end)
+  end
+
+  defp select_todo(todos) do
+    probabilities = calculate_probabilities(todos)
+    cumulative_probabilities = Enum.scan(probabilities, 0, fn {_, prob}, acc -> acc + prob end)
+
+    random_value = :rand.uniform()
+
+    {{selected_todo, _probability}, _cumulative} =
+      Enum.zip(probabilities, cumulative_probabilities)
+      |> Enum.find(fn {{_, _prob}, cum_prob} -> random_value <= cum_prob end)
+
+    selected_todo
+  end
+
 end
