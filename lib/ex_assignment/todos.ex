@@ -24,19 +24,14 @@ defmodule ExAssignment.Todos do
 
   """
   def list_todos(type \\ nil) do
-    cond do
-      type == :open ->
-        from(t in Todo, where: not t.done, order_by: t.priority)
-        |> Repo.all()
-
-      type == :done ->
-        from(t in Todo, where: t.done, order_by: t.priority)
-        |> Repo.all()
-
-      true ->
-        from(t in Todo, order_by: t.priority)
-        |> Repo.all()
+    query = case type do
+      :open -> from(t in Todo, where: not t.done)
+      :done -> from(t in Todo, where: t.done)
+      _ ->  Todo
     end
+
+    from(t in query, order_by: t.priority)
+    |> Repo.all()
   end
 
   @doc """
@@ -45,10 +40,15 @@ defmodule ExAssignment.Todos do
   ASSIGNMENT: ...
   """
   def get_recommended() do
-    list_todos(:open)
-    |> case do
+    with nil <- get_todo_by([is_persist: true]),
+      [_|_] = todos <- list_todos(:open),
+      %Todo{} = todo <- recommend_todo(todos) do
+      {:ok, todo} = update_todo(todo, %{is_persist: true})
+      todo
+      else
+      nil -> nil
       [] -> nil
-      todos -> Enum.take_random(todos, 1) |> List.first()
+      todo -> todo
     end
   end
 
@@ -67,6 +67,22 @@ defmodule ExAssignment.Todos do
 
   """
   def get_todo!(id), do: Repo.get!(Todo, id)
+
+  @doc """
+  Gets a single todo on the base of filtered options.
+
+  Raises `Ecto.NoResultsError` if the Todo does not exist.
+
+  ## Examples
+
+      iex> get_todo_by([id: 123])
+      %Todo{}
+
+      iex> get_todo_by([id: 456])
+      nil
+
+  """
+  def get_todo_by(opts), do: Repo.get_by(Todo, opts)
 
   @doc """
   Creates a todo.
@@ -144,7 +160,7 @@ defmodule ExAssignment.Todos do
   """
   def check(id) do
     {_, _} =
-      from(t in Todo, where: t.id == ^id, update: [set: [done: true]])
+      from(t in Todo, where: t.id == ^id, update: [set: [done: true, is_persist: false]])
       |> Repo.update_all([])
 
     :ok
@@ -166,4 +182,69 @@ defmodule ExAssignment.Todos do
 
     :ok
   end
+
+  defp calculate_probabilities(todos) do
+    total_weight = Enum.reduce(todos, 0, fn todo, acc -> acc + 1.0 / todo.priority end)
+
+    Enum.map(todos, fn todo ->
+      probability = (1.0 / todo.priority) / total_weight
+      {todo, probability}
+    end)
+  end
+
+  @doc """
+  Recommends a to-do item based on calculated probabilities.
+
+  ## Parameters
+
+    - todos: A list of to-do items, each containing a `priority` field.
+
+  ## Returns
+
+    - A to-do item selected based on weighted random selection according to their probabilities.
+
+  The function first calculates the probabilities, then generates a random value to select a to-do item whose cumulative probability matches the random value.
+
+  ## Example
+
+      iex> todos = [%{priority: 1}, %{priority: 2}, %{priority: 3}]
+      iex> recommend_todo(todos)
+      %{priority: 1} # The output can vary due to randomness
+  """
+  def recommend_todo(todos) do
+    probabilities = calculate_probabilities(todos)
+    cumulative_probabilities = Enum.scan(probabilities, 0, fn {_, prob}, acc -> acc + prob end)
+
+    random_value = :rand.uniform()
+
+    {{selected_todo, _probability}, _cumulative} =
+      Enum.zip(probabilities, cumulative_probabilities)
+      |> Enum.find(fn {{_, _prob}, cum_prob} -> random_value <= cum_prob end)
+
+    selected_todo
+  end
+
+  @doc """
+  Resets the `is_persist` flag of the currently persisted to-do item.
+
+  This function finds the to-do item that is currently marked as persistent (`is_persist: true`) and updates its `is_persist` flag to `false`.
+
+  ## Returns
+
+    - `{:ok, _}` if the update was successful.
+    - `nil` if no persisted to-do item was found.
+
+  ## Example
+
+      iex> reset_recommended_todo()
+      {:ok, _} # If a persisted to-do was found and updated
+      nil      # If no persisted to-do was found
+  """
+  def reset_recommended_todo() do
+    todo = get_todo_by(is_persist: true)
+    if todo do
+      {:ok, _} = update_todo(todo, %{is_persist: false})
+    end
+  end
+
 end
