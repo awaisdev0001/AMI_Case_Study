@@ -45,10 +45,15 @@ defmodule ExAssignment.Todos do
   ASSIGNMENT: ...
   """
   def get_recommended() do
-    list_todos(:open)
-    |> case do
+    with nil <- get_todo_by([is_persist: true]),
+      [_|_] = todos <- list_todos(:open),
+      %Todo{} = todo <- recommend_todo(todos) do
+      {:ok, todo} = update_todo(todo, %{is_persist: true})
+      todo
+      else
+      nil -> nil
       [] -> nil
-      todos -> recommend_todo(todos)
+      todo -> todo
     end
   end
 
@@ -67,6 +72,22 @@ defmodule ExAssignment.Todos do
 
   """
   def get_todo!(id), do: Repo.get!(Todo, id)
+
+  @doc """
+  Gets a single todo on the base of filtered options.
+
+  Raises `Ecto.NoResultsError` if the Todo does not exist.
+
+  ## Examples
+
+      iex> get_todo_by([id: 123])
+      %Todo{}
+
+      iex> get_todo_by([id: 456])
+      nil
+
+  """
+  def get_todo_by(opts), do: Repo.get_by(Todo, opts)
 
   @doc """
   Creates a todo.
@@ -144,7 +165,7 @@ defmodule ExAssignment.Todos do
   """
   def check(id) do
     {_, _} =
-      from(t in Todo, where: t.id == ^id, update: [set: [done: true]])
+      from(t in Todo, where: t.id == ^id, update: [set: [done: true, is_persist: false]])
       |> Repo.update_all([])
 
     :ok
@@ -167,9 +188,6 @@ defmodule ExAssignment.Todos do
     :ok
   end
 
-  def recommend_todo(todos) do
-    selected_todo = select_todo(todos)
-  end
 
   defp calculate_probabilities(todos) do
     total_weight = Enum.reduce(todos, 0, fn todo, acc -> acc + 1.0 / todo.priority end)
@@ -180,7 +198,7 @@ defmodule ExAssignment.Todos do
     end)
   end
 
-  defp select_todo(todos) do
+  defp recommend_todo(todos) do
     probabilities = calculate_probabilities(todos)
     cumulative_probabilities = Enum.scan(probabilities, 0, fn {_, prob}, acc -> acc + prob end)
 
